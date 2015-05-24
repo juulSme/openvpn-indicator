@@ -7,10 +7,12 @@ try:
        from gi.repository import AppIndicator3 as AppIndicator  
 except:  
        from gi.repository import AppIndicator
-import os
+import os, sys
 
 FREQUENCY = 60 # seconds
-PATH = os.getcwd()+"/pics/"
+PATH = os.path.abspath(__file__).split("/")
+DELIMITER = "/"
+BASEPATH = DELIMITER.join(PATH[0:len(PATH)-1])+"/pics/"
 
 class OpenVpnIndicator:
     def __init__(self):
@@ -20,14 +22,14 @@ class OpenVpnIndicator:
             AppIndicator.IndicatorCategory.OTHER)
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         self.icon_red()
-        self.ind.set_attention_icon(PATH+'green.png')
+        self.ind.set_attention_icon(BASEPATH+'green.png')
         self.setup_menu()
 
     def icon_orange(self):
-        self.ind.set_icon(PATH+'orange.png')
+        self.ind.set_icon(BASEPATH+'orange.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_red(self):
-        self.ind.set_icon(PATH+'red.png')
+        self.ind.set_icon(BASEPATH+'red.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_green(self):
         self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
