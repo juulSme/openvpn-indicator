@@ -1,23 +1,29 @@
 #!/usr/bin/env python
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
-import os, subprocess
-import gi
+import gi, logging, os, subprocess
+from datetime import datetime
+
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
 from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 
+logging.basicConfig(format='%(message)s', level='INFO')
+logger = logging.getLogger(__name__)
+
 
 SERVICE_NAME='openvpn@client'
-STATUS_COMMAND='systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
+ADAPTER_NAME='tap0'
+SERVICE_STATUS_COMMAND= 'systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
+ADAPTER_STATUS_COMMAND= 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
 START_COMMAND='systemctl start {service_name}'.format(service_name=SERVICE_NAME)
 STOP_COMMAND='systemctl stop {service_name}'.format(service_name=SERVICE_NAME)
 RESTART_COMMAND='systemctl restart {service_name}'.format(service_name=SERVICE_NAME)
 SUDO_COMMAND='gksudo {command}'
-FREQUENCY = 60 # seconds
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
 BASEPATH = DELIMITER.join(PATH[0:len(PATH)-1])+"/pics/"
+
 
 class OpenVpnIndicator:
     def __init__(self):
@@ -27,14 +33,15 @@ class OpenVpnIndicator:
             AppIndicator.IndicatorCategory.OTHER)
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         self.icon_red()
-        self.ind.set_attention_icon(BASEPATH+'white_lock2.png')
+        self.ind.set_attention_icon(BASEPATH+'connected.png')
         self.setup_menu()
+        self.frequency = -1
 
     def icon_orange(self):
-        self.ind.set_icon(BASEPATH+'white_scaled.png')
+        self.ind.set_icon(BASEPATH+'connecting.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_red(self):
-        self.ind.set_icon(BASEPATH+'white_scaled.png')
+        self.ind.set_icon(BASEPATH+'disconnected.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_green(self):
         self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
@@ -42,12 +49,16 @@ class OpenVpnIndicator:
     def setup_menu(self):
         self.menu = Gtk.Menu()
 
-        proc = subprocess.Popen(STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, shell=False)
-        vpnStatus = proc.wait()
-        self.isRunning = vpnStatus == 0
+        proc = subprocess.Popen(SERVICE_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, shell=False)
+        service_running = proc.wait() == 0
+        proc = subprocess.Popen(ADAPTER_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        adapter_up = proc.wait() == 0 and 'inet addr' in proc.communicate()[0]
+
+        self.connected = service_running and adapter_up
+        self.connecting = service_running and not self.connected
 
         # Start
-        if(not self.isRunning):
+        if(not self.connected):
             item = Gtk.MenuItem()
             item.set_label("Connect VPN")
             item.connect("activate", self.handler_menu_start)
@@ -55,7 +66,7 @@ class OpenVpnIndicator:
             self.menu.append(item)
 
         # Stop
-        if(self.isRunning):
+        if(self.connected):
             item = Gtk.MenuItem()
             item.set_label("Disconnect VPN")
             item.connect("activate", self.handler_menu_stop)
@@ -63,7 +74,7 @@ class OpenVpnIndicator:
             self.menu.append(item)
 
         # Restart
-        if(self.isRunning):
+        if(self.connected):
             item = Gtk.MenuItem()
             item.set_label("Restart VPN")
             item.connect("activate", self.handler_menu_restart)
@@ -89,16 +100,27 @@ class OpenVpnIndicator:
         self.checkStatus()
 
     def checkStatus(self):
+        logger.debug('Status: connected=' + str(self.connected) + ', connecting=' + str(self.connecting) + ' at ' +
+                     str(datetime.now().time()))
         self.setup_menu()
-        if self.isRunning:
+        if self.connected:
             self.icon_green()
+            desired_frequency = 30
+        elif self.connecting:
+            self.icon_orange()
+            desired_frequency = 0.5
         else:
             self.icon_red()
-        return 1
+            desired_frequency = 120
+        if desired_frequency != self.frequency:
+            logger.debug('Status poll frequency set to ' + str(desired_frequency) + 's')
+            GLib.timeout_add(desired_frequency * 1000, self.checkStatus)
+            self.frequency = desired_frequency
+            return False
+        return True
 
     def main(self):
         self.checkStatus()
-        GLib.timeout_add(FREQUENCY * 1000, self.checkStatus)
         Gtk.main()
 
 if __name__ == "__main__":
