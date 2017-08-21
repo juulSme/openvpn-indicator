@@ -37,7 +37,7 @@ class OpenVpnIndicator:
     def setup_menu(self):
         self.menu = Gtk.Menu()
 
-        vpnStatus = os.system("service openvpn status")
+        vpnStatus = os.system("systemctl status --no-pager openvpn@client")
         self.isRunning = vpnStatus == 0
 
         # Start
