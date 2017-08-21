@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
+import os, subprocess
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('AppIndicator3', '0.1')
+from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 
-from gi.repository import Gtk, GLib
-try: 
-       from gi.repository import AppIndicator3 as AppIndicator  
-except:  
-       from gi.repository import AppIndicator
-import os, sys
 
+SERVICE_NAME='openvpn@client'
+STATUS_COMMAND='systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
+START_COMMAND='systemctl start {service_name}'.format(service_name=SERVICE_NAME)
+STOP_COMMAND='systemctl stop {service_name}'.format(service_name=SERVICE_NAME)
+RESTART_COMMAND='systemctl restart {service_name}'.format(service_name=SERVICE_NAME)
+SUDO_COMMAND='gksudo {command}'
 FREQUENCY = 60 # seconds
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
@@ -22,14 +27,14 @@ class OpenVpnIndicator:
             AppIndicator.IndicatorCategory.OTHER)
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         self.icon_red()
-        self.ind.set_attention_icon(BASEPATH+'green.png')
+        self.ind.set_attention_icon(BASEPATH+'white_lock2.png')
         self.setup_menu()
 
     def icon_orange(self):
-        self.ind.set_icon(BASEPATH+'orange.png')
+        self.ind.set_icon(BASEPATH+'white_scaled.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_red(self):
-        self.ind.set_icon(BASEPATH+'red.png')
+        self.ind.set_icon(BASEPATH+'white_scaled.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     def icon_green(self):
         self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
@@ -37,13 +42,14 @@ class OpenVpnIndicator:
     def setup_menu(self):
         self.menu = Gtk.Menu()
 
-        vpnStatus = os.system("systemctl status --no-pager openvpn@client")
+        proc = subprocess.Popen(STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, shell=False)
+        vpnStatus = proc.wait()
         self.isRunning = vpnStatus == 0
 
         # Start
         if(not self.isRunning):
             item = Gtk.MenuItem()
-            item.set_label("Start")
+            item.set_label("Connect VPN")
             item.connect("activate", self.handler_menu_start)
             item.show()
             self.menu.append(item)
@@ -51,7 +57,7 @@ class OpenVpnIndicator:
         # Stop
         if(self.isRunning):
             item = Gtk.MenuItem()
-            item.set_label("Stop")
+            item.set_label("Disconnect VPN")
             item.connect("activate", self.handler_menu_stop)
             item.show()
             self.menu.append(item)
@@ -59,7 +65,7 @@ class OpenVpnIndicator:
         # Restart
         if(self.isRunning):
             item = Gtk.MenuItem()
-            item.set_label("Restart")
+            item.set_label("Restart VPN")
             item.connect("activate", self.handler_menu_restart)
             item.show()
             self.menu.append(item)
@@ -69,17 +75,17 @@ class OpenVpnIndicator:
 
     def handler_menu_start(self, evt):
         self.icon_orange()
-        os.system("gksudo service openvpn start")
+        os.system(SUDO_COMMAND.format(command=START_COMMAND))
         self.checkStatus()
 
     def handler_menu_stop(self, evt):
         self.icon_orange()
-        os.system("gksudo service openvpn stop")
+        os.system(SUDO_COMMAND.format(command=STOP_COMMAND))
         self.checkStatus()
 
     def handler_menu_restart(self, evt):
         self.icon_orange()
-        os.system("gksudo service openvpn restart")
+        os.system(SUDO_COMMAND.format(command=RESTART_COMMAND))
         self.checkStatus()
 
     def checkStatus(self):
