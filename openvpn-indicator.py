@@ -3,26 +3,31 @@
 # GTK3 indicator for Ubuntu Unity
 import gi, logging, os, subprocess
 
+from datetime import datetime
+
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
 from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 
-logging.basicConfig(format='%(message)s', level='INFO')
+logging.basicConfig(format='%(levelname)s: %(message)s', level='INFO')
 logger = logging.getLogger(__name__)
 
 # change these variables to reflect your setup
 SERVICE_NAME = 'openvpn@client_profile'
 ADAPTER_NAME = 'tap0'
+BROADCAST_ADDRESS = '192.168.1.255'
 PING_DOMAIN = 'somemachine.mylan.private'
+NUC_MAC = '00:AA:00:AA:00:AA'
 
 SERVICE_STATUS_COMMAND = 'systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
-ADAPTER_STATUS_COMMAND = 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
-NSLOOKUP_COMMAND = 'nslookup {domain}'.format(domain=PING_DOMAIN)
+IFCONFIG_STATUS_COMMAND = 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
+NSLOOKUP_COMMAND = 'host -W 1 {domain}'.format(domain=PING_DOMAIN)
 PING_STATUS_COMMAND = 'ping -c 1 {domain}'.format(domain=PING_DOMAIN)
 START_COMMAND = 'systemctl start {service_name}'.format(service_name=SERVICE_NAME)
 STOP_COMMAND = 'systemctl stop {service_name}'.format(service_name=SERVICE_NAME)
 RESTART_COMMAND = 'systemctl restart {service_name}'.format(service_name=SERVICE_NAME)
-SUDO_COMMAND = 'gksudo {command}'
+WAKE_COMMAND = 'wakeonlan -i {broadcast_address} {mac}'
+SUDO_COMMAND = 'gksudo'
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
 BASEPATH = DELIMITER.join(PATH[0:len(PATH)-1])+"/pics/"
@@ -35,51 +40,82 @@ class OpenVpnIndicator:
             "",
             AppIndicator.IndicatorCategory.OTHER)
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-        self.icon_red()
+        self.icon_disconnected()
         self.ind.set_attention_icon(BASEPATH+'connected.png')
         self.setup_menu()
         self.frequency = -1
 
-    def icon_orange(self):
+    def icon_connecting(self):
         self.ind.set_icon(BASEPATH+'connecting.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-    def icon_red(self):
+    def icon_disconnected(self):
         self.ind.set_icon(BASEPATH+'disconnected.png')
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-    def icon_green(self):
+    def icon_connected(self):
         self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
 
-    def setup_menu(self):
-        self.menu = Gtk.Menu()
+    def create_menu_item(self, label, fc):
+        menu_item = Gtk.MenuItem()
+        menu_item.set_label(label)
+        menu_item.connect("activate", fc)
+        menu_item.show()
+        return menu_item
 
+    def create_menu_separator(self):
+        separator = Gtk.SeparatorMenuItem()
+        separator.show()
+        return separator
+
+    def setup_menu(self):
+        Gtk.Menu
+        self.menu = Gtk.Menu()
+        self.menu_title = self.create_menu_item('title', lambda x: self.check_status())
+        self.menu_connect = self.create_menu_item('Connect VPN', self.create_subprocess_callable(
+            sudo=True, command=START_COMMAND))
+        self.menu_disconnect = self.create_menu_item('Disconnect VPN', self.create_subprocess_callable(
+            sudo=True, command=STOP_COMMAND))
+        self.menu_reconnect = self.create_menu_item('Reconnect VPN', self.create_subprocess_callable(
+            sudo=True, command=RESTART_COMMAND))
+        self.menu_wake_nuc = self.create_menu_item('Wake NUC', self.create_subprocess_callable(
+            sudo=False, command=WAKE_COMMAND.format(broadcast_address=BROADCAST_ADDRESS, mac=NUC_MAC)))
+        self.menu_exit = self.create_menu_item('Exit OpenVPN Indicator', lambda x: exit(0))
+
+
+        self.menu.append(self.menu_title)
+        self.menu.append(self.create_menu_separator())
+        self.menu.append(self.menu_connect)
+        self.menu.append(self.menu_disconnect)
+        self.menu.append(self.menu_reconnect)
+        self.menu.append(self.menu_wake_nuc)
+        self.menu.append(self.create_menu_separator())
+        self.menu.append(self.menu_exit)
+
+        self.refresh_menu()
+        self.menu.show()
+        self.ind.set_menu(self.menu)
+
+    def refresh_menu(self):
         adapter_up = False
         ip_address = False
         dns_returns = False
         domain_returns_ping = False
 
-        proc = subprocess.Popen(SERVICE_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, shell=False)
-        service_running = proc.wait() == 0
+        service_running = self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND)['done']
         if service_running:
-            proc = subprocess.Popen(ADAPTER_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    shell=False)
-            adapter_up = proc.wait() == 0
+            ifconfig_result = self.run_subprocess(sudo=False, command=IFCONFIG_STATUS_COMMAND)
+            adapter_up = ifconfig_result['done']
         if adapter_up:
-            ip_line = proc.communicate()[0].splitlines()[1].strip()
+            ip_line = ifconfig_result['stdout'].splitlines()[1].strip()
             ip_address = False if not ip_line.startswith('inet addr:') else ip_line[10:ip_line.find('  ')]
         if ip_address:
-            proc = subprocess.Popen(NSLOOKUP_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    shell=False)
-            dns_returns = proc.wait() == 0
+            dns_returns = self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND)['done']
         if dns_returns:
-            proc = subprocess.Popen(PING_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    shell=False)
-            domain_returns_ping = proc.wait() == 0
+            domain_returns_ping = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND)['done']
 
         self.connected = service_running and domain_returns_ping
         self.connecting = service_running and not self.connected
 
-        titlemenu = Gtk.MenuItem()
-        titlemenu.set_label(
+        self.menu_title.set_label(
             ('Connected' if self.connected else 'Connecting..' if self.connecting else 'Disconnected') +
             '\nService {service}'.format(service=SERVICE_NAME) + (
                 ' stopped' if not service_running else (
@@ -98,81 +134,68 @@ class OpenVpnIndicator:
                 ))
             )
         )
-        titlemenu.connect("activate", self.handler_refresh)
-        titlemenu.show()
-        self.menu.append(titlemenu)
 
-        # Start
-        if(not self.connected):
-            item = Gtk.MenuItem()
-            item.set_label("Connect VPN")
-            item.connect("activate", self.handler_menu_start)
-            item.show()
-            self.menu.append(item)
-
-        # Stop
-        if(self.connected):
-            item = Gtk.MenuItem()
-            item.set_label("Disconnect VPN")
-            item.connect("activate", self.handler_menu_stop)
-            item.show()
-            self.menu.append(item)
-
-        # Restart
-        if(self.connected):
-            item = Gtk.MenuItem()
-            item.set_label("Restart VPN")
-            item.connect("activate", self.handler_menu_restart)
-            item.show()
-            self.menu.append(item)
-
-        exit_menu_item = Gtk.MenuItem()
-        exit_menu_item.set_label("Exit OpenVPN Indicator")
-        exit_menu_item.connect("activate", lambda x: exit(0))
-        exit_menu_item.show()
-        self.menu.append(exit_menu_item)
-
-        self.menu.show()
-        self.ind.set_menu(self.menu)
-
-    def handler_menu_start(self, evt):
-        self.icon_orange()
-        os.system(SUDO_COMMAND.format(command=START_COMMAND))
-        self.checkStatus()
-
-    def handler_menu_stop(self, evt):
-        self.icon_orange()
-        os.system(SUDO_COMMAND.format(command=STOP_COMMAND))
-        self.checkStatus()
-
-    def handler_menu_restart(self, evt):
-        self.icon_orange()
-        os.system(SUDO_COMMAND.format(command=RESTART_COMMAND))
-        self.checkStatus()
-
-    def handler_refresh(self, evt):
-        self.checkStatus()
-
-    def checkStatus(self):
-        self.setup_menu()
         if self.connected:
-            self.icon_green()
+            self.menu_connect.hide()
+            self.menu_disconnect.show()
+            self.menu_reconnect.show()
+            self.menu_wake_nuc.show()
+        elif self.connecting:
+            self.menu_connect.hide()
+            self.menu_disconnect.show()
+            self.menu_reconnect.show()
+            self.menu_wake_nuc.hide()
+        else:  # disconnected
+            self.menu_connect.show()
+            self.menu_disconnect.hide()
+            self.menu_reconnect.hide()
+            self.menu_wake_nuc.hide()
+
+    def run_subprocess(self, sudo, command):
+        list_command = [SUDO_COMMAND, command] if sudo else command.split(' ')
+        command = (SUDO_COMMAND + ' ' if sudo else '') + command
+
+        proc = subprocess.Popen(list_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        exit = proc.wait()
+        success = exit == 0
+        (out, err) = proc.communicate()
+
+        if success:
+            logger.debug('Executed \"' + command + '\" successfully:\n' + out)
+        else:
+            logger.debug('Error executing \"' + command + '\" (exit ' + str(exit) + ')')
+            if len(err) > 0:
+                logger.debug('\n' + err)
+
+        return {'exit': exit, 'stdout': out, 'stderr': err, 'done': success}
+
+    def create_subprocess_callable(self, sudo, command):
+        def func(evt):
+            self.run_subprocess(sudo=sudo, command=command)
+            self.check_status()
+        return func
+
+    def check_status(self):
+        logger.debug('Status refreshed at ' + str(datetime.now().time()))
+        self.refresh_menu()
+        if self.connected:
+            self.icon_connected()
             desired_frequency = 30
         elif self.connecting:
-            self.icon_orange()
+            self.icon_connecting()
             desired_frequency = 1
         else:
-            self.icon_red()
+            self.icon_disconnected()
             desired_frequency = 120
         if desired_frequency != self.frequency:
-            logger.debug('Status poll frequency set to ' + str(desired_frequency) + 's')
-            GLib.timeout_add(desired_frequency * 1000, self.checkStatus)
+            logger.info('Status poll frequency set to ' + str(desired_frequency) + 's')
+            GLib.timeout_add(desired_frequency * 1000, self.check_status)
             self.frequency = desired_frequency
             return False
         return True
 
     def main(self):
-        self.checkStatus()
+        self.check_status()
         Gtk.main()
 
 if __name__ == "__main__":
