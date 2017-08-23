@@ -63,6 +63,7 @@ class OpenVpnIndicator:
             proc = subprocess.Popen(ADAPTER_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     shell=False)
             adapter_up = proc.wait() == 0 and 'inet addr' in proc.communicate()[0]
+        # if ip_address_allo
         if adapter_up:
             proc = subprocess.Popen(NSLOOKUP_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     shell=False)
@@ -74,6 +75,28 @@ class OpenVpnIndicator:
 
         self.connected = service_running and domain_returns_ping
         self.connecting = service_running and not self.connected
+
+        titlemenu = Gtk.MenuItem()
+        titlemenu.set_label(
+            ('Connected' if self.connected else 'Connecting..' if self.connecting else 'Disconnected') +
+            '\nService {service}'.format(service=SERVICE_NAME) + (
+                ' stopped' if not service_running else (
+                    ' running\nAdapter {adapter}'.format(adapter=ADAPTER_NAME) + (
+                        ' down' if not adapter_up else (
+                            ' up\nDomain {domain}'.format(domain=PING_DOMAIN) + (
+                                ' unknown' if not dns_returns else (
+                                    ' known ' + (
+                                        'but not reachable' if not domain_returns_ping else 'and reachable'
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        titlemenu.show()
+        self.menu.append(titlemenu)
 
         # Start
         if(not self.connected):
@@ -124,8 +147,6 @@ class OpenVpnIndicator:
         self.checkStatus()
 
     def checkStatus(self):
-        logger.debug('Status: connected=' + str(self.connected) + ', connecting=' + str(self.connecting) + ' at ' +
-                     str(datetime.now().time()))
         self.setup_menu()
         if self.connected:
             self.icon_green()
