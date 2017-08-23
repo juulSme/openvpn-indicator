@@ -2,7 +2,6 @@
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
 import gi, logging, os, subprocess
-from datetime import datetime
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
@@ -54,6 +53,7 @@ class OpenVpnIndicator:
         self.menu = Gtk.Menu()
 
         adapter_up = False
+        ip_address = False
         dns_returns = False
         domain_returns_ping = False
 
@@ -62,9 +62,11 @@ class OpenVpnIndicator:
         if service_running:
             proc = subprocess.Popen(ADAPTER_STATUS_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     shell=False)
-            adapter_up = proc.wait() == 0 and 'inet addr' in proc.communicate()[0]
-        # if ip_address_allo
+            adapter_up = proc.wait() == 0
         if adapter_up:
+            ip_line = proc.communicate()[0].splitlines()[1].strip()
+            ip_address = False if not ip_line.startswith('inet addr:') else ip_line[10:ip_line.find('  ')]
+        if ip_address:
             proc = subprocess.Popen(NSLOOKUP_COMMAND.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     shell=False)
             dns_returns = proc.wait() == 0
@@ -81,18 +83,19 @@ class OpenVpnIndicator:
             ('Connected' if self.connected else 'Connecting..' if self.connecting else 'Disconnected') +
             '\nService {service}'.format(service=SERVICE_NAME) + (
                 ' stopped' if not service_running else (
-                    ' running\nAdapter {adapter}'.format(adapter=ADAPTER_NAME) + (
-                        ' down' if not adapter_up else (
-                            ' up\nDomain {domain}'.format(domain=PING_DOMAIN) + (
-                                ' unknown' if not dns_returns else (
-                                    ' known ' + (
-                                        'but not reachable' if not domain_returns_ping else 'and reachable'
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
+                ' running\nAdapter {adapter}'.format(adapter=ADAPTER_NAME) + (
+                    ' down' if not adapter_up else (
+                    ' up ' + (
+                        'but no IP is assigned' if not ip_address else (
+                        'with IP {ip} assigned'.format(ip=ip_address) + '\nDomain {domain}'.format(domain=PING_DOMAIN) + (
+                            ' unknown' if not dns_returns else (
+                            ' known ' + (
+                                'but not reachable' if not domain_returns_ping else
+                                'and reachable'
+                            ))
+                        ))
+                    ))
+                ))
             )
         )
         titlemenu.show()
@@ -153,7 +156,7 @@ class OpenVpnIndicator:
             desired_frequency = 30
         elif self.connecting:
             self.icon_orange()
-            desired_frequency = 0.5
+            desired_frequency = 1
         else:
             self.icon_red()
             desired_frequency = 120
