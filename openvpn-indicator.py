@@ -99,6 +99,12 @@ class OpenVpnIndicator:
             item.show()
             self.menu.append(item)
 
+        exit_menu_item = Gtk.MenuItem()
+        exit_menu_item.set_label("Exit OpenVPN Indicator")
+        exit_menu_item.connect("activate", lambda x: exit(0))
+        exit_menu_item.show()
+        self.menu.append(exit_menu_item)
+
         self.menu.show()
         self.ind.set_menu(self.menu)
 
