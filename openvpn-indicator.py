@@ -98,6 +98,7 @@ class OpenVpnIndicator:
                 ))
             )
         )
+        titlemenu.connect("activate", self.handler_refresh)
         titlemenu.show()
         self.menu.append(titlemenu)
 
@@ -147,6 +148,9 @@ class OpenVpnIndicator:
     def handler_menu_restart(self, evt):
         self.icon_orange()
         os.system(SUDO_COMMAND.format(command=RESTART_COMMAND))
+        self.checkStatus()
+
+    def handler_refresh(self, evt):
         self.checkStatus()
 
     def checkStatus(self):
