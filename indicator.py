@@ -2,8 +2,9 @@
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
 import gi, logging, os, subprocess
-
 from datetime import datetime
+
+from my_config import ADAPTER_NAME, SERVICE_NAME, PING_DOMAIN, WOL_MACHINE_NAME, WOL_MAC, WOL_BROADCAST_ADDRESS
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
@@ -12,12 +13,6 @@ from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 logging.basicConfig(format='%(levelname)s: %(message)s', level='INFO')
 logger = logging.getLogger(__name__)
 
-# change these variables to reflect your setup
-SERVICE_NAME = 'openvpn@client_profile'
-ADAPTER_NAME = 'tap0'
-BROADCAST_ADDRESS = '192.168.1.255'
-PING_DOMAIN = 'somemachine.mylan.private'
-NUC_MAC = '00:AA:00:AA:00:AA'
 
 SERVICE_STATUS_COMMAND = 'systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
 IFCONFIG_STATUS_COMMAND = 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
@@ -76,8 +71,9 @@ class OpenVpnIndicator:
             sudo=True, command=STOP_COMMAND))
         self.menu_reconnect = self.create_menu_item('Reconnect VPN', self.create_subprocess_callable(
             sudo=True, command=RESTART_COMMAND))
-        self.menu_wake_nuc = self.create_menu_item('Wake NUC', self.create_subprocess_callable(
-            sudo=False, command=WAKE_COMMAND.format(broadcast_address=BROADCAST_ADDRESS, mac=NUC_MAC)))
+        self.menu_wake_nuc = self.create_menu_item('Wake {name}'.format(name=WOL_MACHINE_NAME),
+            self.create_subprocess_callable(sudo=False, command=WAKE_COMMAND.format(
+                broadcast_address=WOL_BROADCAST_ADDRESS, mac=WOL_MAC)))
         self.menu_exit = self.create_menu_item('Exit OpenVPN Indicator', lambda x: exit(0))
 
 
