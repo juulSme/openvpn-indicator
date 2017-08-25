@@ -4,7 +4,8 @@
 import gi, logging, os, subprocess
 from datetime import datetime
 
-from my_config import ADAPTER_NAME, SERVICE_NAME, PING_DOMAIN, WOL_MACHINE_NAME, WOL_MAC, WOL_BROADCAST_ADDRESS
+from my_config import ADAPTER_NAME, SERVICE_NAME, PING_DOMAIN, WOL_MACHINE_NAME, WOL_MAC, WOL_BROADCAST_ADDRESS, \
+    WOL_MACHINE_DOMAIN
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 SERVICE_STATUS_COMMAND = 'systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
 IFCONFIG_STATUS_COMMAND = 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
 NSLOOKUP_COMMAND = 'host -W 1 {domain}'.format(domain=PING_DOMAIN)
-PING_STATUS_COMMAND = 'ping -c 1 {domain}'.format(domain=PING_DOMAIN)
+PING_STATUS_COMMAND = 'ping -c 1 {domain}'
 START_COMMAND = 'systemctl start {service_name}'.format(service_name=SERVICE_NAME)
 STOP_COMMAND = 'systemctl stop {service_name}'.format(service_name=SERVICE_NAME)
 RESTART_COMMAND = 'systemctl restart {service_name}'.format(service_name=SERVICE_NAME)
@@ -71,9 +72,11 @@ class OpenVpnIndicator:
             sudo=True, command=STOP_COMMAND))
         self.menu_reconnect = self.create_menu_item('Reconnect VPN', self.create_subprocess_callable(
             sudo=True, command=RESTART_COMMAND))
-        self.menu_wake_nuc = self.create_menu_item('Wake {name}'.format(name=WOL_MACHINE_NAME),
-            self.create_subprocess_callable(sudo=False, command=WAKE_COMMAND.format(
-                broadcast_address=WOL_BROADCAST_ADDRESS, mac=WOL_MAC)))
+        self.menu_wake = self.create_menu_item(
+            'Wake {name}'.format(name=WOL_MACHINE_NAME), self.create_subprocess_callable(
+                sudo=False, command=WAKE_COMMAND.format(broadcast_address=WOL_BROADCAST_ADDRESS, mac=WOL_MAC)
+            )
+        )
         self.menu_exit = self.create_menu_item('Exit OpenVPN Indicator', lambda x: exit(0))
 
 
@@ -82,7 +85,7 @@ class OpenVpnIndicator:
         self.menu.append(self.menu_connect)
         self.menu.append(self.menu_disconnect)
         self.menu.append(self.menu_reconnect)
-        self.menu.append(self.menu_wake_nuc)
+        self.menu.append(self.menu_wake)
         self.menu.append(self.create_menu_separator())
         self.menu.append(self.menu_exit)
 
@@ -95,6 +98,7 @@ class OpenVpnIndicator:
         ip_address = False
         dns_returns = False
         domain_returns_ping = False
+        wol_machine_returns_ping = False
 
         service_running = self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND)['done']
         if service_running:
@@ -106,13 +110,14 @@ class OpenVpnIndicator:
         if ip_address:
             dns_returns = self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND)['done']
         if dns_returns:
-            domain_returns_ping = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND)['done']
+            domain_returns_ping = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=PING_DOMAIN))['done']
+            wol_machine_returns_ping = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=WOL_MACHINE_DOMAIN))['done']
 
         self.connected = service_running and domain_returns_ping
         self.connecting = service_running and not self.connected
 
         self.menu_title.set_label(
-            ('Connected' if self.connected else 'Connecting..' if self.connecting else 'Disconnected') +
+            ('Connected' if self.connected else 'Connecting...' if self.connecting else 'Disconnected') +
             '\nService {service}'.format(service=SERVICE_NAME) + (
                 ' stopped' if not service_running else (
                 ' running\nAdapter {adapter}'.format(adapter=ADAPTER_NAME) + (
@@ -122,8 +127,8 @@ class OpenVpnIndicator:
                         'with IP {ip} assigned'.format(ip=ip_address) + '\nDomain {domain}'.format(domain=PING_DOMAIN) + (
                             ' unknown' if not dns_returns else (
                             ' known ' + (
-                                'but not reachable' if not domain_returns_ping else
-                                'and reachable'
+                                'but not responsive' if not domain_returns_ping else
+                                'and responsive'
                             ))
                         ))
                     ))
@@ -135,17 +140,22 @@ class OpenVpnIndicator:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
-            self.menu_wake_nuc.show()
+            self.menu_wake.show()
         elif self.connecting:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
-            self.menu_wake_nuc.hide()
+            self.menu_wake.hide()
         else:  # disconnected
             self.menu_connect.show()
             self.menu_disconnect.hide()
             self.menu_reconnect.hide()
-            self.menu_wake_nuc.hide()
+            self.menu_wake.hide()
+
+        if wol_machine_returns_ping:
+            self.menu_wake.set_label('{name} is online and responsive'.format(name=WOL_MACHINE_NAME))
+        else:
+            self.menu_wake.set_label('Wake {name}'.format(name=WOL_MACHINE_NAME))
 
     def run_subprocess(self, sudo, command):
         list_command = [SUDO_COMMAND, command] if sudo else command.split(' ')
