@@ -1,8 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
 import gi, logging, os, subprocess
 from datetime import datetime
+from enum import IntEnum, Enum
 
 from my_config import ADAPTER_NAME, SERVICE_NAME, PING_DOMAIN, WOL_MACHINE_NAME, WOL_MAC, WOL_BROADCAST_ADDRESS, \
     WOL_MACHINE_DOMAIN
@@ -27,39 +28,36 @@ SUDO_COMMAND = 'gksudo'
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
 BASEPATH = DELIMITER.join(PATH[0:len(PATH)-1])+"/pics/"
+LOG_FULL_COMMAND_OUTPUT = False
 
 
-class VPNState(object):
-    def __init__(self, signal_menu_refresh, signal_frequency_change):
-        self.signal_menu_refresh = signal_menu_refresh
-        self.signal_frequency_change = signal_frequency_change
-        self.service_running = False
-        self.adapter_up = False
-        self.ip_address = False
-        self.domain_known = False
-        self.domain_responsive = False
-        self.wol_machine_responsive = False
-        self.connected = False
-        self.connecting = False
-        self.frequency = -1
+class VPNState(IntEnum):
+    SERVICE_STOPPED = 0
+    SERVICE_RUNNING = 1
+    ADAPTER_UP = 2
+    IP_ALLOCATED = 3
+    DOMAIN_KNOWN = 4
+    DOMAIN_RESPONSIVE = 5
 
-    def set_with_change_detection(self, key, value):
-        if hasattr(self, key) and self.__getattribute__(key) != value:
-            super(VPNState, self).__setattr__(key, value)
-            if key in ['service_running', 'domain_responsive']:
-                self.connected = self.service_running and self.domain_responsive
-                self.connecting = self.service_running and not self.connected
-            if key not in ['connected', 'connecting', 'frequency']:
-                logger.info('State changed: ' + key + ' -> ' + str(value))
-                self.signal_menu_refresh()
-            if key in ['frequency']:
-                self.signal_frequency_change()
-        super(VPNState, self).__setattr__(key, value)
+
+class WOLState(IntEnum):
+    UNRESPONSIVE = 0
+    RESPONSIVE = 1
+
+
+class ConnectionStatus(Enum):
+    CONNECTED = 'Connected'
+    CONNECTING = 'Connecting'
+    DISCONNECTED = 'Disconnected'
 
 
 class OpenVpnIndicator:
     def __init__(self):
-        self.state = VPNState(self.refresh_menu, self.signal_frequency_change)
+        self._vpn_state = None
+        self._ip = None
+        self._nuc_state = None
+        self._frequency = -1
+        self.frequency_change = False
         self.ind = AppIndicator.Indicator.new(
             "openvpn-indicator",
             "",
@@ -67,21 +65,41 @@ class OpenVpnIndicator:
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         self.ind.set_attention_icon(BASEPATH+'connected.png')
         self.setup_menu()
-        self.frequency_change = False
 
-    def signal_frequency_change(self):
-        self.frequency_change = True
+    @property
+    def vpn_state(self) -> VPNState:
+        return self._vpn_state
 
-    def set_icon_connecting(self):
-        self.ind.set_icon(BASEPATH+'connecting.png')
-        self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+    @vpn_state.setter
+    def vpn_state(self, value: VPNState) -> None:
+        if value != self._vpn_state:
+            logger.info('VPN state changed to ' + value.name)
+            self._vpn_state = value
+            self.update_vpn()
 
-    def set_icon_disconnected(self):
-        self.ind.set_icon(BASEPATH+'disconnected.png')
-        self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+    @property
+    def nuc_state(self) -> WOLState:
+        return self._nuc_state
 
-    def set_icon_connected(self):
-        self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
+    @nuc_state.setter
+    def nuc_state(self, value: WOLState) -> None:
+        if value != self._nuc_state:
+            logger.info('NUC state changed to ' + value.name)
+            self._nuc_state = value
+            self.update_nuc()
+
+    @property
+    def frequency(self) -> int:
+        return self._frequency
+
+    @frequency.setter
+    def frequency(self, value: int) -> None:
+        self.frequency_change = True if value != self.frequency else False
+        self._frequency = value
+
+    def get_status(self) -> ConnectionStatus:
+        return ConnectionStatus.CONNECTED if self.vpn_state == VPNState.DOMAIN_RESPONSIVE else \
+            ConnectionStatus.CONNECTING if self.vpn_state >= VPNState.SERVICE_RUNNING else ConnectionStatus.DISCONNECTED
 
     def create_menu_item(self, label, fc):
         menu_item = Gtk.MenuItem()
@@ -124,21 +142,20 @@ class OpenVpnIndicator:
         self.menu.show()
         self.ind.set_menu(self.menu)
 
-    def refresh_menu(self):
-        logger.debug("Refreshing menu")
+    def update_vpn(self):
+        logger.debug('Updating VPN')
 
         self.menu_title.set_label(
-            ('Connected' if self.state.connected else 'Connecting...' if self.state.connecting else 'Disconnected') +
-            '\nService {service}'.format(service=SERVICE_NAME) + (
-                ' stopped' if not self.state.service_running else (
+            self.get_status().value + '\nService {service}'.format(service=SERVICE_NAME) + (
+                ' stopped' if self.vpn_state < VPNState.SERVICE_RUNNING else (
                 ' running\nAdapter {adapter}'.format(adapter=ADAPTER_NAME) + (
-                    ' down' if not self.state.adapter_up else (
+                    ' down' if self.vpn_state < VPNState.ADAPTER_UP else (
                     ' up ' + (
-                        'but no IP is assigned' if not self.state.ip_address else (
-                        'with IP {ip} assigned'.format(ip=self.state.ip_address) + '\nDomain {domain}'.format(domain=PING_DOMAIN) + (
-                            ' unknown' if not self.state.domain_known else (
+                        'but no IP is assigned' if self.vpn_state < VPNState.IP_ALLOCATED else (
+                        'with IP {ip} assigned'.format(ip=self.ip) + '\nDomain {domain}'.format(domain=PING_DOMAIN) + (
+                            ' unknown' if self.vpn_state < VPNState.DOMAIN_KNOWN else (
                             ' known ' + (
-                                'but not responsive' if not self.state.domain_responsive else
+                                'but not responsive' if self.vpn_state < VPNState.DOMAIN_RESPONSIVE else
                                 'and responsive'
                             ))
                         ))
@@ -147,29 +164,33 @@ class OpenVpnIndicator:
             )
         )
 
-        if self.state.connected:
+        if self.get_status() == ConnectionStatus.CONNECTED:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
             self.menu_wake.show()
-            self.set_icon_connected()
-            self.state.frequency = 30
-        elif self.state.connecting:
+            self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
+            self.frequency = 30
+        elif self.get_status() == ConnectionStatus.CONNECTING:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
             self.menu_wake.hide()
-            self.set_icon_connecting()
-            self.state.frequency = 1
+            self.ind.set_icon(BASEPATH + 'connecting.png')
+            self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+            self.frequency = 1
         else:  # disconnected
             self.menu_connect.show()
             self.menu_disconnect.hide()
             self.menu_reconnect.hide()
             self.menu_wake.hide()
-            self.set_icon_disconnected()
-            self.state.frequency = 120
+            self.ind.set_icon(BASEPATH + 'disconnected.png')
+            self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+            self.frequency = 120
 
-        if self.state.wol_machine_responsive:
+    def update_nuc(self):
+        logger.debug('Updating NUC')
+        if self.nuc_state == WOLState.RESPONSIVE:
             self.menu_wake.set_label('{name} is online and responsive'.format(name=WOL_MACHINE_NAME))
         else:
             self.menu_wake.set_label('Wake {name}'.format(name=WOL_MACHINE_NAME))
@@ -178,19 +199,21 @@ class OpenVpnIndicator:
         list_command = [SUDO_COMMAND, command] if sudo else command.split(' ')
         command = (SUDO_COMMAND + ' ' if sudo else '') + command
 
-        proc = subprocess.Popen(list_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
-        exit = proc.wait()
-        success = exit == 0
-        (out, err) = proc.communicate()
+        completed_process = subprocess.run(list_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        success = completed_process.returncode == 0
+        out = completed_process.stdout.decode('utf-8')
+        err = completed_process.stderr.decode('utf-8')
 
         if success:
-            logger.debug('Executed \"' + command + '\" successfully:\n' + out)
+            logger.debug('Executed \"' + command + '\" successfully')
+            if LOG_FULL_COMMAND_OUTPUT and len(out) > 0:
+                logger.debug('\n' + out)
         else:
-            logger.debug('Error executing \"' + command + '\" (exit ' + str(exit) + ')')
-            if len(err) > 0:
+            logger.debug('Error executing \"' + command + '\" (exit ' + str(completed_process.returncode) + ')')
+            if LOG_FULL_COMMAND_OUTPUT and len(err) > 0:
                 logger.debug('\n' + err)
 
-        return {'exit': exit, 'stdout': out, 'stderr': err, 'done': success}
+        return {'exit': completed_process.returncode, 'stdout': out, 'stderr': err, 'done': success}
 
     def create_subprocess_callable(self, sudo, command):
         def func(evt):
@@ -201,23 +224,31 @@ class OpenVpnIndicator:
     def check_status(self):
         logger.debug('Status refreshed at ' + str(datetime.now().time()))
 
-        self.state.set_with_change_detection('service_running', self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND)['done'])
-        if self.state.service_running:
+        new_vpn_state = VPNState.SERVICE_STOPPED
+        new_nuc_state = WOLState.UNRESPONSIVE
+
+        if self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND)['done']:
+            new_vpn_state = VPNState.SERVICE_RUNNING
             ifconfig_result = self.run_subprocess(sudo=False, command=IFCONFIG_STATUS_COMMAND)
-            self.state.adapter_up = ifconfig_result['done']
-        if self.state.adapter_up:
+        if new_vpn_state >= VPNState.SERVICE_RUNNING and ifconfig_result['done']:
+            new_vpn_state = VPNState.ADAPTER_UP
             ip_line = ifconfig_result['stdout'].splitlines()[1].strip()
-            self.state.ip_address = False if not ip_line.startswith('inet addr:') else ip_line[10:ip_line.find('  ')]
-        if self.state.ip_address:
-            self.state.domain_known = self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND)['done']
-        if self.state.domain_known:
-            self.state.domain_responsive = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=PING_DOMAIN))['done']
-            self.state.wol_machine_responsive = self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=WOL_MACHINE_DOMAIN))['done']
+        if new_vpn_state >= VPNState.ADAPTER_UP and ip_line.startswith('inet addr:'):
+            new_vpn_state = VPNState.IP_ALLOCATED
+            self.ip = ip_line[10:ip_line.find('  ')]
+        if new_vpn_state >= VPNState.IP_ALLOCATED and self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND)['done']:
+            new_vpn_state = VPNState.DOMAIN_KNOWN
+        if new_vpn_state >= VPNState.DOMAIN_KNOWN and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=PING_DOMAIN))['done']:
+            new_vpn_state = VPNState.DOMAIN_RESPONSIVE
+        if new_vpn_state >= VPNState.DOMAIN_RESPONSIVE and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=WOL_MACHINE_DOMAIN))['done']:
+            new_nuc_state = WOLState.RESPONSIVE
+
+        self.vpn_state = new_vpn_state
+        self.nuc_state = new_nuc_state
 
         if self.frequency_change:
-            logger.info('Status is "' + ('Connected' if self.state.connected else 'Connecting' if self.state.connecting
-                else 'Disconnected') + '", polling frequency set to ' + str(self.state.frequency) + 's')
-            GLib.timeout_add(self.state.frequency * 1000, self.check_status)
+            logger.info('Status is "' + self.get_status().name + '", polling frequency set to ' + str(self.frequency) + 's')
+            GLib.timeout_add(self.frequency * 1000, self.check_status)
             self.frequency_change = False
             return False
         return True
