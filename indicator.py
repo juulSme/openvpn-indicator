@@ -168,14 +168,12 @@ class OpenVpnIndicator:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
-            self.menu_wake.show()
             self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
             self.frequency = 30
         elif self.get_status() == ConnectionStatus.CONNECTING:
             self.menu_connect.hide()
             self.menu_disconnect.show()
             self.menu_reconnect.show()
-            self.menu_wake.hide()
             self.ind.set_icon(BASEPATH + 'connecting.png')
             self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
             self.frequency = 1
@@ -183,7 +181,6 @@ class OpenVpnIndicator:
             self.menu_connect.show()
             self.menu_disconnect.hide()
             self.menu_reconnect.hide()
-            self.menu_wake.hide()
             self.ind.set_icon(BASEPATH + 'disconnected.png')
             self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
             self.frequency = 120
@@ -240,7 +237,7 @@ class OpenVpnIndicator:
             new_vpn_state = VPNState.DOMAIN_KNOWN
         if new_vpn_state >= VPNState.DOMAIN_KNOWN and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=PING_DOMAIN))['done']:
             new_vpn_state = VPNState.DOMAIN_RESPONSIVE
-        if new_vpn_state >= VPNState.DOMAIN_RESPONSIVE and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=WOL_MACHINE_DOMAIN))['done']:
+        if self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=WOL_MACHINE_DOMAIN))['done']:
             new_nuc_state = WOLState.RESPONSIVE
 
         self.vpn_state = new_vpn_state
