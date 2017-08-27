@@ -6,8 +6,12 @@ SERVICE_NAME = 'openvpn@client_profile'
 ADAPTER_NAME = 'tap0'
 PING_DOMAIN = 'somemachine.mylan.private'
 
-# For Wake-On-LAN menu entry
-WOL_MACHINE_NAME = 'some_name'
-WOL_MACHINE_DOMAIN = 'wol_machine.mylan.private'
-WOL_MAC = '00:AA:00:AA:00:AA'
-WOL_BROADCAST_ADDRESS = '192.168.1.255'
+# For Wake-On-LAN menu entries, a tuple of dicts of details
+WOL_MACHINES = (
+    {
+        'name': 'some_name',
+        'domain': 'wol_machine.mylan.private',
+        'mac': '00:AA:00:AA:00:AA',
+        'broadcast_address': '192.168.1.255',
+    },
+)
