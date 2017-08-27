@@ -7,8 +7,9 @@ polling systemctl (to check if the connection is up) and ifconfig (to check if a
 IP address has been assigned to the tun/tap device). When the service is up but 
 the address has not been assigned, it shows as __connecting__, if the address is 
 assigned the status changes to __connected__. The connection can be started, 
-restarted and stopped from the applet. There is now a menu-item to wake up a machine 
-at the end of the tunnel. 
+restarted and stopped from the applet. It is possible to configure wake-on-lan
+menu items to wake up machines at the end of the VPN tunnel. Setting up the VPN correctly 
+for this to work is beyond the scope of this readme.
 
 In essence, this is a service indicator. The code can be easily modified to 
 indicate the status of any (systemctl) service, not just the OpenVPN service.

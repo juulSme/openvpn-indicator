@@ -14,13 +14,13 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
 from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 
-logging.basicConfig(format='%(levelname)s: %(message)s', level='INFO')
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level='DEBUG')#, filename='/home/juul/openvpn_indicator.log')
 logger = logging.getLogger(__name__)
 
 
 SERVICE_STATUS_COMMAND = 'systemctl status --no-pager {service_name}'.format(service_name=SERVICE_NAME)
 IFCONFIG_STATUS_COMMAND = 'ifconfig {adapter}'.format(adapter=ADAPTER_NAME)
-NSLOOKUP_COMMAND = 'host -W 1 {domain}'.format(domain=PING_DOMAIN)
+NSLOOKUP_COMMAND = 'host -W 1 {domain}'
 PING_STATUS_COMMAND = 'ping -W 1 -c 1 {domain}'
 START_COMMAND = 'systemctl start {service_name}'.format(service_name=SERVICE_NAME)
 STOP_COMMAND = 'systemctl stop {service_name}'.format(service_name=SERVICE_NAME)
@@ -258,7 +258,7 @@ class OpenVpnIndicator:
         if new_vpn_state >= VPNState.ADAPTER_UP and ip_line.startswith('inet addr:'):
             new_vpn_state = VPNState.IP_ALLOCATED
             self.ip = ip_line[10:ip_line.find('  ')]
-        if new_vpn_state >= VPNState.IP_ALLOCATED and self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND)['done']:
+        if new_vpn_state >= VPNState.IP_ALLOCATED and self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND.format(domain=PING_DOMAIN))['done']:
             new_vpn_state = VPNState.DOMAIN_KNOWN
         if new_vpn_state >= VPNState.DOMAIN_KNOWN and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=PING_DOMAIN))['done']:
             new_vpn_state = VPNState.DOMAIN_RESPONSIVE
@@ -266,7 +266,8 @@ class OpenVpnIndicator:
         self.vpn_state = new_vpn_state
 
         for m in self.wol_machines:
-            if self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=m.domain))['done']:
+            if self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND.format(domain=m.domain))['done'] and \
+                    self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=m.domain))['done']:
                 m.state = WOLState.RESPONSIVE
             else:
                 m.state = WOLState.UNRESPONSIVE
