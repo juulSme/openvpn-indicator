@@ -18,7 +18,7 @@ indicate the status of any (systemctl) service, not just the OpenVPN service.
 Requires Python, gksudo and OpenVPN. Make a copy of __example_config.py__ called 
 __my_config.py__ and modify the variables in the file to reflect your setup. Run with 
 ```
-python indicator.py
+python3 indicator.py
 ```
 
 Add as a startup application using `Launcher -> Startup Applications`.

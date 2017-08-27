@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=OpenVPN Indicator
 GenericName=Start OpenVPN Indicator for Unity
-Exec=/usr/bin/python <path>/indicator.py
+Exec=/usr/bin/python3 <path>/indicator.py
 Icon=remmina
 Terminal=false
 Type=Application

@@ -8,5 +8,6 @@ PING_DOMAIN = 'somemachine.mylan.private'
 
 # For Wake-On-LAN menu entry
 WOL_MACHINE_NAME = 'some_name'
+WOL_MACHINE_DOMAIN = 'wol_machine.mylan.private'
 WOL_MAC = '00:AA:00:AA:00:AA'
 WOL_BROADCAST_ADDRESS = '192.168.1.255'
