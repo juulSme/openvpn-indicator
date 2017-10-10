@@ -31,7 +31,7 @@ RESTART_COMMAND = 'systemctl restart {service_name}'
 CURRENT_STOP_COMMAND = ''
 CURRENT_RESTART_COMMAND = ''
 WAKE_COMMAND = 'wakeonlan -i {broadcast_address} {mac}'
-SUDO_COMMAND = 'gksudo'
+SUDO_COMMAND = 'pkexec'
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
 BASEPATH = DELIMITER.join(PATH[0:len(PATH) - 1]) + "/pics/"
@@ -103,7 +103,7 @@ class OpenVpnIndicator:
         for s in self.services:
             menu_entry = self.create_menu_item(
                 'Connect to {name}'.format(name=s.value.description), self.create_subprocess_callable(
-                    sudo=True, command=START_COMMAND.format(service_name=s.value.service_name)
+                    sudo=False, command=START_COMMAND.format(service_name=s.value.service_name)
                 )
             )
             self.menu_entries[s.name] = menu_entry
@@ -218,7 +218,7 @@ class OpenVpnIndicator:
 
     def create_subprocess_callable(self, sudo: bool, command: str) -> Callable[..., None]:
         def func(evt):
-            logger.info('Calling "{sudo}{command}"'.format(sudo='gksudo ' if sudo else '', command=command))
+            logger.info('Calling "{sudo}{command}"'.format(sudo=SUDO_COMMAND + ' ' if sudo else '', command=command))
             self.run_subprocess(sudo=sudo, command=command)
             self.check_status()
         return func
@@ -226,7 +226,7 @@ class OpenVpnIndicator:
     def create_disconnect_callable(self) -> Callable[..., None]:
         def func(evt):
             self.create_subprocess_callable(
-                sudo=True, command=STOP_COMMAND.format(
+                sudo=False, command=STOP_COMMAND.format(
                     service_name=self.active_service.service_name
                 )
             )(evt)
@@ -235,7 +235,7 @@ class OpenVpnIndicator:
     def create_reconnect_callable(self) -> Callable[..., None]:
         def func(evt):
             self.create_subprocess_callable(
-                sudo=True, command=RESTART_COMMAND.format(
+                sudo=False, command=RESTART_COMMAND.format(
                     service_name=self.active_service.service_name
                 )
             )(evt)
@@ -256,9 +256,9 @@ class OpenVpnIndicator:
             if new_vpn_state >= VPNState.SERVICE_RUNNING and ifconfig_result['done']:
                 new_vpn_state = VPNState.ADAPTER_UP
                 ip_line = ifconfig_result['stdout'].splitlines()[1].strip()
-            if new_vpn_state >= VPNState.ADAPTER_UP and ip_line.startswith('inet addr:'):
+            if new_vpn_state >= VPNState.ADAPTER_UP and ip_line.startswith('inet '):
                 new_vpn_state = VPNState.IP_ALLOCATED
-                self.ip = ip_line[10:ip_line.find('  ')]
+                self.ip = ip_line[ip_line.find('inet ')+5:ip_line.find('  netmask')]
             if new_vpn_state >= VPNState.IP_ALLOCATED and self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND.format(domain=s.value.ping_domain))['done']:
                 new_vpn_state = VPNState.DOMAIN_KNOWN
             if new_vpn_state >= VPNState.DOMAIN_KNOWN and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=s.value.ping_domain))['done']:
