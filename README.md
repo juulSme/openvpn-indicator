@@ -26,5 +26,5 @@ Add as a startup application using `Launcher -> Startup Applications`.
 
 All dependencies can be installed using
 ```
-sudo apt-get install openvpn gksudo python wakeonlan
+sudo apt-get install openvpn gksudo python wakeonlan gir1.2-appindicator3-0.1
 ``` 
