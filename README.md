@@ -28,3 +28,13 @@ All dependencies can be installed using
 ```
 sudo apt-get install openvpn python3 wakeonlan gir1.2-appindicator3-0.1
 ``` 
+
+#### Use without sudo password
+To use the application without a sudo password, add a file to `/etc/sudoers.d` where the systemctl commands are enabled without password, for example:
+```
+Cmnd_Alias OPENVPN = /bin/systemctl start my-openvpn-service, \
+                     /bin/systemctl stop my-openvpn-service, \
+                     /bin/systemctl restart my-openvpn-service
+
+%my_username ALL= NOPASSWD: OPENVPN
+```
