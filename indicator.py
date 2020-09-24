@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # openvpn-indicator v1.0
 # GTK3 indicator for Ubuntu Unity
+from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 import logging
 import os
 import subprocess
@@ -16,9 +17,9 @@ from my_config import SERVICES, WOL_MACHINES, LOGGING_FILE, LOGGING_LEVEL
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('AppIndicator3', '0.1')
-from gi.repository import Gtk, GLib, AppIndicator3 as AppIndicator
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=LOGGING_LEVEL, filename=LOGGING_FILE)
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+                    level=LOGGING_LEVEL, filename=LOGGING_FILE)
 logger = logging.getLogger(__name__)
 
 SERVICE_STATUS_COMMAND = 'systemctl status --no-pager {service_name}'
@@ -30,7 +31,7 @@ STOP_COMMAND = 'sudo systemctl stop {service_name}'
 RESTART_COMMAND = 'sudo systemctl restart {service_name}'
 CURRENT_STOP_COMMAND = ''
 CURRENT_RESTART_COMMAND = ''
-WAKE_COMMAND = 'wakeonlan -i {broadcast_address} {mac}'
+WAKE_COMMAND = 'curl -s http://pi.hole:4000/api/wake?mac={mac}&broadcast_address={broadcast_address}'
 SUDO_COMMAND = 'pkexec'
 PATH = os.path.abspath(__file__).split("/")
 DELIMITER = "/"
@@ -56,7 +57,8 @@ class OpenVpnIndicator:
             "",
             AppIndicator.IndicatorCategory.OTHER)  # type: AppIndicator
         self.menu = Gtk.Menu()  # type: Gtk.Menu
-        self.menu_entries = OrderedDict()  # type: OrderedDict[str, Gtk.MenuItem]
+        # type: OrderedDict[str, Gtk.MenuItem]
+        self.menu_entries = OrderedDict()
 
         self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         self.ind.set_attention_icon(BASEPATH + 'connected.png')
@@ -80,7 +82,7 @@ class OpenVpnIndicator:
 
         return ConnectionStatus.DISCONNECTED if service is None or state == VPNState.SERVICE_STOPPED else \
             ConnectionStatus.CONNECTING if (state < VPNState.DOMAIN_RESPONSIVE and service.ping_domain is not None) or \
-                                            state < VPNState.IP_ALLOCATED else \
+            state < VPNState.IP_ALLOCATED else \
             ConnectionStatus.CONNECTED
 
     @staticmethod
@@ -98,7 +100,8 @@ class OpenVpnIndicator:
         return separator
 
     def setup_menu(self) -> None:
-        self.menu_entries['title'] = self.create_menu_item('title', lambda x: self.check_status())
+        self.menu_entries['title'] = self.create_menu_item(
+            'title', lambda x: self.check_status())
         self.menu_entries['separator1'] = self.create_menu_separator()
         for s in self.services:
             menu_entry = self.create_menu_item(
@@ -107,8 +110,10 @@ class OpenVpnIndicator:
                 )
             )
             self.menu_entries[s.name] = menu_entry
-        self.menu_entries['disconnect'] = self.create_menu_item('Disconnect VPN', self.create_disconnect_callable())
-        self.menu_entries['reconnect'] = self.create_menu_item('Reconnect VPN', self.create_reconnect_callable())
+        self.menu_entries['disconnect'] = self.create_menu_item(
+            'Disconnect VPN', self.create_disconnect_callable())
+        self.menu_entries['reconnect'] = self.create_menu_item(
+            'Reconnect VPN', self.create_reconnect_callable())
         self.menu_entries['separator2'] = self.create_menu_separator()
         for m in self.wol_machines:
             menu_entry = self.create_menu_item(
@@ -116,11 +121,13 @@ class OpenVpnIndicator:
                     sudo=False, command=WAKE_COMMAND.format(broadcast_address=m.broadcast_address, mac=m.mac)
                 )
             )
-            m.update_callable = self.create_wol_machine_update_callable(menu_entry)
+            m.update_callable = self.create_wol_machine_update_callable(
+                menu_entry)
             self.menu_entries[m.name] = menu_entry
         if len(self.wol_machines) > 0:
             self.menu_entries['separator3'] = self.create_menu_separator()
-        self.menu_entries['exit'] = self.create_menu_item('Exit OpenVPN Indicator', lambda x: exit(0))
+        self.menu_entries['exit'] = self.create_menu_item(
+            'Exit OpenVPN Indicator', lambda x: exit(0))
 
         for entry in self.menu_entries.values():
             self.menu.append(entry)
@@ -133,23 +140,23 @@ class OpenVpnIndicator:
         self.menu_entries['title'].set_label(
             self.get_status().value + '\nService' + (
                 's stopped' if self.active_service is None else (
-                ' {service} running\nAdapter {adapter}'.format(service=self.active_service.description,
-                                                               adapter=self.active_service.adapter) + (
-                    ' down' if self.active_service.state < VPNState.ADAPTER_UP else (
-                    ' up ' + (
-                        'but no IP is assigned' if self.active_service.state < VPNState.IP_ALLOCATED else (
-                        'with IP {ip} assigned'.format(ip=self.ip) + (
-                            '' if self.active_service.ping_domain is None else (
-                            '\nDomain {domain}'.format(domain=self.active_service.ping_domain) + (
-                                ' unknown' if self.active_service.state < VPNState.DOMAIN_KNOWN else (
-                                ' known ' + (
-                                    'but not responsive' if self.active_service.state < VPNState.DOMAIN_RESPONSIVE else
-                                    'and responsive'
-                                ))
+                    ' {service} running\nAdapter {adapter}'.format(service=self.active_service.description,
+                                                                   adapter=self.active_service.adapter) + (
+                        ' down' if self.active_service.state < VPNState.ADAPTER_UP else (
+                            ' up ' + (
+                                'but no IP is assigned' if self.active_service.state < VPNState.IP_ALLOCATED else (
+                                    'with IP {ip} assigned'.format(ip=self.ip) + (
+                                        '' if self.active_service.ping_domain is None else (
+                                            '\nDomain {domain}'.format(domain=self.active_service.ping_domain) + (
+                                                ' unknown' if self.active_service.state < VPNState.DOMAIN_KNOWN else (
+                                                    ' known ' + (
+                                                        'but not responsive' if self.active_service.state < VPNState.DOMAIN_RESPONSIVE else
+                                                        'and responsive'
+                                                    ))
+                                            ))
+                                    ))
                             ))
-                        ))
                     ))
-                ))
             )
         )
 
@@ -190,7 +197,8 @@ class OpenVpnIndicator:
     def create_wol_machine_update_callable(menu_entry: Gtk.MenuItem) -> Callable[[WOLMachine, ], None]:
         def func(m: WOLMachine) -> None:
             if m.state == WOLState.RESPONSIVE:
-                menu_entry.set_label('{name} is online and responsive'.format(name=m.name))
+                menu_entry.set_label(
+                    '{name} is online and responsive'.format(name=m.name))
             else:
                 menu_entry.set_label('Wake {name}'.format(name=m.name))
         return func
@@ -200,7 +208,8 @@ class OpenVpnIndicator:
         list_command = [SUDO_COMMAND, command] if sudo else command.split(' ')
         command = (SUDO_COMMAND + ' ' if sudo else '') + command
 
-        completed_process = subprocess.run(list_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        completed_process = subprocess.run(
+            list_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
         success = completed_process.returncode == 0
         out = completed_process.stdout.decode('utf-8')
         err = completed_process.stderr.decode('utf-8')
@@ -210,7 +219,8 @@ class OpenVpnIndicator:
             if LOG_FULL_COMMAND_OUTPUT and len(out) > 0:
                 logger.debug('\n' + out)
         else:
-            logger.debug('Error executing \"' + command + '\" (exit ' + str(completed_process.returncode) + ')')
+            logger.debug('Error executing \"' + command +
+                         '\" (exit ' + str(completed_process.returncode) + ')')
             if LOG_FULL_COMMAND_OUTPUT and len(err) > 0:
                 logger.debug('\n' + err)
 
@@ -218,7 +228,8 @@ class OpenVpnIndicator:
 
     def create_subprocess_callable(self, sudo: bool, command: str) -> Callable[..., None]:
         def func(evt):
-            logger.info('Calling "{sudo}{command}"'.format(sudo=SUDO_COMMAND + ' ' if sudo else '', command=command))
+            logger.info('Calling "{sudo}{command}"'.format(
+                sudo=SUDO_COMMAND + ' ' if sudo else '', command=command))
             self.run_subprocess(sudo=sudo, command=command)
             self.check_status()
         return func
@@ -250,15 +261,17 @@ class OpenVpnIndicator:
             ip_line = None
 
             if \
-            self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND.format(service_name=s.value.service_name))['done']:
+                    self.run_subprocess(sudo=False, command=SERVICE_STATUS_COMMAND.format(service_name=s.value.service_name))['done']:
                 new_vpn_state = VPNState.SERVICE_RUNNING
-                ifconfig_result = self.run_subprocess(sudo=False, command=IFCONFIG_STATUS_COMMAND.format(adapter=s.value.adapter))
+                ifconfig_result = self.run_subprocess(
+                    sudo=False, command=IFCONFIG_STATUS_COMMAND.format(adapter=s.value.adapter))
             if new_vpn_state >= VPNState.SERVICE_RUNNING and ifconfig_result['done']:
                 new_vpn_state = VPNState.ADAPTER_UP
                 ip_line = ifconfig_result['stdout'].splitlines()[1].strip()
             if new_vpn_state >= VPNState.ADAPTER_UP and ip_line.startswith('inet '):
                 new_vpn_state = VPNState.IP_ALLOCATED
-                self.ip = ip_line[ip_line.find('inet ')+5:ip_line.find('  netmask')]
+                self.ip = ip_line[ip_line.find(
+                    'inet ')+5:ip_line.find('  netmask')]
             if new_vpn_state >= VPNState.IP_ALLOCATED and self.run_subprocess(sudo=False, command=NSLOOKUP_COMMAND.format(domain=s.value.ping_domain))['done']:
                 new_vpn_state = VPNState.DOMAIN_KNOWN
             if new_vpn_state >= VPNState.DOMAIN_KNOWN and self.run_subprocess(sudo=False, command=PING_STATUS_COMMAND.format(domain=s.value.ping_domain))['done']:
